@@ -1,0 +1,70 @@
+name: Windows 설치 파일 만들기
+
+# 버전 태그(v1.2.3)를 올리면 자동으로 설치 파일을 만들어 Releases 에 게시합니다.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      PF_SIGN_KEY: ${{ secrets.PF_SIGN_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 구성요소 설치
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements.txt pyinstaller
+      - name: 프로그램 묶기(PyInstaller)
+        shell: pwsh
+        run: python -m PyInstaller --noconfirm PRESSFLOW.spec
+      - name: 실행 점검
+        shell: pwsh
+        run: |
+          $env:PRESSFLOW_HOME = "$PWD\_smoke"; $env:PRESSFLOW_PORT = "8791"
+          $p = Start-Process -FilePath "dist\PRESSFLOW\PRESSFLOW.exe" -ArgumentList "run" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 1
+            try { $r = Invoke-RestMethod http://127.0.0.1:8791/api/health; if ($r.app -eq "PRESSFLOW") { $ok = $true; break } } catch {}
+          }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "묶은 프로그램이 시작되지 않았습니다." }
+      - name: 설치 파일 만들기(Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress | Out-Null
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $ver = (Select-String -Path core.py -Pattern '^VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          $args2 = @("/DAppVersion=$ver")
+          if (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\Languages\Korean.isl") { $args2 += "/DHAVEKOREAN" }
+          & $iscc @args2 installer\pressflow.iss
+          if ($LASTEXITCODE -ne 0) { throw "설치 파일 생성 실패" }
+          "VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: 업데이트 정보 서명(개인키가 등록된 경우)
+        if: env.PF_SIGN_KEY != ''
+        shell: pwsh
+        run: |
+          Set-Content -Path release_private.key -Value $env:PF_SIGN_KEY -NoNewline -Encoding ascii
+          python make_release.py build --notes "PRESSFLOW $env:VERSION"
+          python make_release.py add-installer "dist-installer\PRESSFLOW-Setup-$env:VERSION.exe"
+          Remove-Item release_private.key -Force
+      - name: Releases 에 게시
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "v$env:VERSION" }
+          $files = @("dist-installer\PRESSFLOW-Setup-$env:VERSION.exe")
+          if (Test-Path "dist\latest.json") { $files += Get-ChildItem dist -File | ForEach-Object { $_.FullName } }
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) { gh release create $tag --title "PRESSFLOW $env:VERSION" --notes "Windows 설치 파일: PRESSFLOW-Setup-$env:VERSION.exe" }
+          gh release upload $tag $files --clobber

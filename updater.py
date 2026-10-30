@@ -24,7 +24,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+FROZEN = bool(getattr(sys, "frozen", False))  # 설치형(.exe): 코드는 묶여 있어 파일 교체 대신 새 설치 파일을 실행한다
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 UPD = ROOT / ".update"
 PENDING = UPD / "pending.json"
 PREV = UPD / "prev"
@@ -172,6 +173,8 @@ def apply(manifest: dict | None = None, user: str = "system") -> dict:
     verify_sig(m["version"], m["sha256"], m["sig"])
     if m.get("min_python") and sys.version_info[:2] < tuple(int(x) for x in str(m["min_python"]).split(".")[:2]):
         raise RuntimeError(f"이 업데이트는 Python {m['min_python']} 이상이 필요합니다.")
+    if FROZEN:
+        return _apply_installer(m, cur, user)
     data = _read(_sibling(m["_url"], m["file"]), MAX_ZIP)
     if hashlib.sha256(data).hexdigest() != m["sha256"].lower():
         raise RuntimeError("내려받은 파일이 손상되었거나 변조되었습니다(해시 불일치). 설치하지 않았습니다.")
@@ -246,6 +249,38 @@ def apply(manifest: dict | None = None, user: str = "system") -> dict:
     return {"ok": True, "updated": True, "from": cur, "to": m["version"], "message": f"{m['version']} 으로 업데이트했습니다. 곧 다시 시작합니다."}
 
 
+_INSTALLER: list = []
+
+
+def _apply_installer(m: dict, cur: str, user: str) -> dict:
+    """설치형: 서명된 새 설치 파일을 내려받아 검증하고, 재시작 시점에 조용히 실행한다(설치 파일이 앱 교체·재실행을 맡는다)."""
+    import core
+    inst = (m.get("installer") or {}).get("windows")
+    if not inst:
+        raise RuntimeError("이 버전에는 설치형 업데이트 파일이 없습니다. 새 설치 파일을 직접 받아 설치하세요.")
+    verify_sig(m["version"], inst["sha256"], inst["sig"])
+    data = _read(_sibling(m["_url"], inst["file"]), 400 * 1024 * 1024)
+    if hashlib.sha256(data).hexdigest() != inst["sha256"].lower():
+        raise RuntimeError("내려받은 설치 파일이 손상되었거나 변조되었습니다(해시 불일치). 실행하지 않았습니다.")
+    if core.get("setup_done"):
+        import backup
+        r = backup.run_backup("pre-update")
+        if isinstance(r, dict) and r.get("error"):
+            raise RuntimeError("업데이트 전 백업에 실패해 중단했습니다: " + str(r["error"])[:150])
+    d = core.HOME / "updates"
+    d.mkdir(parents=True, exist_ok=True)
+    for old in d.glob("*.exe"):
+        old.unlink(missing_ok=True)
+    f = d / inst["file"]
+    f.write_bytes(data)
+    _INSTALLER[:] = [str(f)]
+    core.audit(user, "update", f"{cur} → {m['version']} (설치 파일)")
+    core.put("update_last", {"current": m["version"], "latest": m["version"], "available": False, "checked": core.now_iso(),
+                             "installed": core.now_iso(), "notes": m.get("notes", "")})
+    return {"ok": True, "updated": True, "from": cur, "to": m["version"], "installer": True,
+            "message": f"{m['version']} 으로 업데이트합니다. 곧 다시 시작합니다."}
+
+
 # ── 시작 실패 시 자동 복귀 (stdlib 만 사용) ─────────────────────────
 def rollback() -> bool:
     if not PREV.exists():
@@ -318,5 +353,11 @@ def restart_soon(delay: float = 1.5) -> None:
         kw["creationflags"] = 0x00000008 | 0x00000200 | 0x08000000
     else:
         kw["start_new_session"] = True
-    subprocess.Popen([exe, str(ROOT / "pressflow.py"), "_restart"], **kw)
+    if _INSTALLER:  # 설치형: 새 설치 파일이 이 프로그램을 닫고 교체한 뒤 다시 실행한다
+        subprocess.Popen([_INSTALLER[0], "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS"], **kw)
+        delay = max(delay, 4.0)
+    elif FROZEN:
+        subprocess.Popen([exe, "_restart"], **kw)
+    else:
+        subprocess.Popen([exe, str(ROOT / "pressflow.py"), "_restart"], **kw)
     threading.Timer(delay, lambda: os._exit(0)).start()

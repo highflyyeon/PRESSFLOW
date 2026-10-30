@@ -17,7 +17,7 @@ from cryptography.fernet import Fernet, InvalidToken
 
 APP = "PRESSFLOW"
 APP_KO = "강원사회복지신문 통합 콘텐츠 자동화 플랫폼"
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 
 HOME = Path(os.environ.get("PRESSFLOW_HOME") or (Path.home() / "PRESSFLOW")).expanduser()
 DATA = HOME / "data"

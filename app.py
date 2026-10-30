@@ -5,6 +5,7 @@ import io
 import json
 import re
 import secrets
+import sys
 import threading
 import zipfile
 from datetime import datetime, timedelta
@@ -25,7 +26,7 @@ import proofread
 import scheduler
 import updater
 
-STATIC = Path(__file__).parent / "static"
+STATIC = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "static"
 STATUS_LABEL = {"drafted": "AI 작성 완료", "review": "검수 필요", "approved": "발행 대기", "published": "발행 완료",
                 "failed": "발행 실패", "excluded": "게시 제외"}
 

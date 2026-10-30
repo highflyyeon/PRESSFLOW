@@ -3,6 +3,7 @@
 
   python make_release.py keygen                 최초 1회: 서명 키 생성(개인키는 release_private.key, 공개키는 update_channel.json)
   python make_release.py build [--bump patch|minor|major] [--notes "변경 내용"]
+  python make_release.py add-installer <설치파일.exe>   (CI가 사용) latest.json 에 설치 파일 서명 추가
   python make_release.py url <업데이트 주소>     사용자 프로그램이 확인할 latest.json 주소를 update_channel.json 에 기록
 
 build 결과(dist/): PRESSFLOW-x.y.z.zip + latest.json  → 두 파일을 같은 곳(웹 주소 또는 공유 폴더)에 올리면 끝.
@@ -22,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 KEYFILE = ROOT / "release_private.key"
 CHANNEL = ROOT / "update_channel.json"
-EXCLUDE_TOP = {"venv", ".update", "dist", "release_private.key", "update_channel.json", ".git", "__pycache__", "make_release.py"}
+EXCLUDE_TOP = {"installer", ".github", "build", "PRESSFLOW.spec", "venv", ".update", "dist", "release_private.key", "update_channel.json", ".git", "__pycache__", "make_release.py"}
 
 
 def keygen():
@@ -61,6 +62,22 @@ def bump(kind):
     p.write_text(s, encoding="utf-8")
 
 
+def add_installer(path, name=None):
+    """dist/latest.json 에 윈도우 설치 파일 항목을 서명해서 추가한다."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    key = KEYFILE.read_bytes() if KEYFILE.exists() else None
+    if key is None:
+        sys.exit("서명 개인키가 없습니다.")
+    f = Path(path)
+    lj = ROOT / "dist" / "latest.json"
+    m = json.loads(lj.read_text(encoding="utf-8"))
+    sha = hashlib.sha256(f.read_bytes()).hexdigest()
+    sig = base64.b64encode(Ed25519PrivateKey.from_private_bytes(base64.b64decode(key)).sign(f"{m['version']}:{sha}".encode())).decode()
+    m.setdefault("installer", {})["windows"] = {"file": name or f.name, "sha256": sha, "sig": sig}
+    lj.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
+    print("설치 파일 항목을 latest.json 에 추가했습니다:", f.name)
+
+
 def build(kind=None, notes=""):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     if not KEYFILE.exists():
@@ -92,6 +109,8 @@ if __name__ == "__main__":
         keygen()
     elif a[0] == "url" and len(a) > 1:
         set_url(a[1])
+    elif a[0] == "add-installer" and len(a) > 1:
+        add_installer(a[1])
     elif a[0] == "build":
         build(a[a.index("--bump") + 1] if "--bump" in a else None, a[a.index("--notes") + 1] if "--notes" in a else "")
     else:

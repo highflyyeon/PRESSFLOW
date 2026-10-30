@@ -26,7 +26,8 @@ if sys.stdout is None:  # pythonw.exe(콘솔 없음)
     sys.stdout = open(os.devnull, "w", encoding="utf-8")
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w", encoding="utf-8")
-ROOT = Path(__file__).resolve().parent
+FROZEN = bool(getattr(sys, "frozen", False))  # 설치 파일(.exe)로 실행 중
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT))
 PORT = int(os.environ.get("PRESSFLOW_PORT", "8765"))
 URL = f"http://127.0.0.1:{PORT}"
@@ -108,6 +109,8 @@ def cmd_run(open_after: bool):
 
 def pyw() -> str:
     exe = sys.executable
+    if FROZEN:
+        return exe
     if SYSTEM == "Windows" and exe.lower().endswith("python.exe"):
         w = exe[:-10] + "pythonw.exe"
         if Path(w).exists():
@@ -137,13 +140,14 @@ def _win_shortcut(lnk: Path, args: str, icon: Path):
 def cmd_install():
     icon = ROOT / "static" / "icons" / "pressflow.ico"
     script = str(ROOT / "pressflow.py")
+    sc = "" if FROZEN else f'"{script}" '  # 설치형(.exe)은 실행 파일이 곧 프로그램
     if SYSTEM == "Windows":
         startup = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Startup"
-        _win_shortcut(startup / "PRESSFLOW 자동시작.lnk", f'"{script}" run', icon)
+        _win_shortcut(startup / "PRESSFLOW 자동시작.lnk", f'{sc}run', icon)
         dd = desktop_dir()
-        _win_shortcut(dd / "PRESSFLOW.lnk", f'"{script}" run --open', icon)
+        _win_shortcut(dd / "PRESSFLOW.lnk", f'{sc}run --open', icon)
         sm = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs"
-        _win_shortcut(sm / "PRESSFLOW.lnk", f'"{script}" run --open', icon)
+        _win_shortcut(sm / "PRESSFLOW.lnk", f'{sc}run --open', icon)
         print("바탕화면·시작 메뉴 바로가기와 로그인 시 자동 시작을 등록했습니다.")
     elif SYSTEM == "Darwin":
         la = Path.home() / "Library/LaunchAgents"
