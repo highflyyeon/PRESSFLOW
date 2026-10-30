@@ -1,0 +1,5 @@
+flask>=3.0
+pillow>=10.0
+pypdf>=4.0
+olefile>=0.46
+cryptography>=42.0

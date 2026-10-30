@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PRESSFLOW">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B2A38"/><stop offset=".55" stop-color="#0E5A57"/><stop offset="1" stop-color="#1A9873"/>
+    </linearGradient>
+    <linearGradient id="amb" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFD166"/><stop offset="1" stop-color="#F29B4B"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".18" cy=".08" r=".85">
+      <stop offset="0" stop-color="#fff" stop-opacity=".14"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="118" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="118" fill="url(#glow)"/>
+  <path d="M176 392V140H290c52 0 84 30 84 76s-32 76-84 76H176" fill="none" stroke="#fff" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M232 192h62M232 238h40" stroke="url(#amb)" stroke-width="16" stroke-linecap="round" fill="none"/>
+  <path d="M236 392c66 0 118-28 152-84" stroke="url(#amb)" stroke-width="22" stroke-linecap="round" fill="none"/>
+</svg>
