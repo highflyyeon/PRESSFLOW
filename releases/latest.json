@@ -1,9 +1,9 @@
 {
-  "version": "1.0.0",
-  "file": "PRESSFLOW-1.0.0.zip",
-  "sha256": "bc564bebd624225e06cf25eaea7a10369a1f68aa32e3fa2914ed9cd4563d966b",
-  "sig": "Onz+QgnynO21fBWYGvUYGNTjgZyX+SbAWMJP9L72Yr5dHCy/Kzw1gk3kS8CW98FP89//Aw9oTrzlE06FdjW1DA==",
-  "notes": "첫 배포",
+  "version": "1.0.1",
+  "file": "PRESSFLOW-1.0.1.zip",
+  "sha256": "47edf7358ca8e08096ddfc54857869982c444f6c314ac2d89d5c29fdd5356e16",
+  "sig": "tiY4zODyrdDK6YtxvzGCO8mBXMBt0L9kJdQL00qem2b9ENbDfB8LPx+VxtkF1Soy7RVBhnbjC009nLsrcgRNAw==",
+  "notes": "Windows 설치 스크립트 오류 수정",
   "date": "2026-10-31",
   "min_python": "3.10"
 }
