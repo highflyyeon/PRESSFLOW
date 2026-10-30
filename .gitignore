@@ -1,0 +1,6 @@
+venv/
+dist/
+.update/
+__pycache__/
+*.pyc
+release_private.key
