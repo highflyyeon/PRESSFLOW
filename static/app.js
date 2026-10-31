@@ -176,7 +176,7 @@ function wizard(step) {
     <div class="grid g2"><label class="f">자동 수집 주기(분)<input type="number" id="m" value="15" min="5"></label><label class="f">최초 수집 범위(일)<input type="number" id="i" value="7" min="1" max="60"></label></div>
     <div class="row"><button type="button" class="btn" id="t">연결 테스트</button><span id="tr" class="small"></span></div>
     <div class="row between"><button type="button" class="btn ghost" id="sk">나중에 하기</button><button class="btn pri" style="padding:11px 22px">저장하고 계속</button></div></form>`);
-    $('#t').onclick = async () => { $('#tr').textContent = '확인 중…'; const r = await api('/api/mail/test', { method: 'POST', body: { user: $('#u').value, password: $('#p').value } }); $('#tr').innerHTML = r.ok ? `<span style="color:var(--green)">✔ 연결 성공 (받은편지함 ${r.total}통)</span>` : `<span style="color:var(--red)">${esc(r.error)}</span>`; };
+    $('#t').onclick = async () => { $('#tr').textContent = '확인 중…'; const r = await api('/api/mail/test', { method: 'POST', body: { user: $('#u').value, password: $('#p').value } }); $('#tr').innerHTML = r.ok ? `<span style="color:var(--green)">✔ 연결 성공 (받은편지함 ${r.total}통, 메일함 ${r.folders || 0}개)</span>` : `<span style="color:var(--red)">${esc(r.error)}</span>`; };
     $('#sk').onclick = () => wizard(2);
     $('#f').onsubmit = async e => { e.preventDefault(); try { await api('/api/settings/mail', { method: 'POST', body: { user: $('#u').value, password: $('#p').value, minutes: +$('#m').value, initial_days: +$('#i').value } }); wizard(2); } catch (er) { fail(er); } };
   };
@@ -505,9 +505,14 @@ async function pSettings(el, q) {
   if (!adm && !['me'].includes(ST.tab)) { b.innerHTML = '<div class="notice info">최고관리자만 변경할 수 있는 설정입니다.</div>'; return; }
   if (ST.tab === 'mail') {
     b.innerHTML = `<div class="card col"><label class="f">네이버 아이디<input type="text" id="mu" value="${esc(s.mail.user)}"></label><label class="f">비밀번호 / 애플리케이션 비밀번호<small>${s.mail.has_password ? '저장되어 있습니다. 바꿀 때만 입력하세요.' : '입력하세요.'}</small><input type="password" id="mp" autocomplete="off"></label>
-    <div class="grid g2"><label class="f">자동 수집 주기(분)<input type="number" id="mm" value="${s.mail.minutes}" min="5"></label><label class="f">최초 수집 범위(일)<small>연결 시점 기준</small><input type="number" id="mi" value="${s.mail.initial_days}"></label></div>
+    <div class="grid g2"><label class="f">자동 수집 주기(분)<input type="number" id="mm" value="${s.mail.minutes}" min="5"></label><label class="f">최초 수집 범위(일)<small>연결 시점 기준 · 아래 시작일이 있으면 그쪽이 우선</small><input type="number" id="mi" value="${s.mail.initial_days}"></label></div>
+    <label class="f">수집 시작일(선택)<small>처음 가져올 때 이 날짜 이후에 받은 메일부터 수집합니다. 예: 2026-10-26 (비우면 위 범위 사용)</small><input type="date" id="msc" value="${esc(s.mail.since || '')}"></label>
     <label class="check"><input type="checkbox" id="ma" ${s.mail.auto ? 'checked' : ''}>자동 수집 사용</label><div class="row"><button class="btn" data-act="mTest">연결 테스트</button><span id="mtr" class="small"></span></div><div class="row"><button class="btn pri" data-act="mSave">저장</button></div>
+    <div class="group-h" style="margin-top:6px">수집할 메일함</div>
+    <p class="muted small">보도자료가 지역별 메일함(춘천시, 원주시 …)에 나뉘어 들어오면, 여기서 수집할 메일함을 고르세요. 메일함 이름이 곧 지역이 되어 기사가 그 지역으로 분류됩니다.</p>
+    <div class="row"><button class="btn" data-act="fLoad">메일함 불러오기</button><span id="fmsg" class="small"></span></div><div id="flist"></div>
     <div class="notice info"><span>메일은 읽기 전용으로 열며 삭제·이동·읽음 표시를 하지 않습니다. 컴퓨터가 꺼져 있는 동안 도착한 메일은 켜질 때 이어서 수집합니다.</span></div></div>`;
+    if ((s.mail.folders || []).length) renderFolders(s.mail.folders);
   } else if (ST.tab === 'blog') {
     b.innerHTML = `<div class="card col"><label class="f">공식 블로그 주소<input type="text" id="bu" value="${esc(s.blog.url)}" placeholder="https://blog.naver.com/…"></label><div class="row"><button class="btn pri" data-act="bSave">저장</button>${s.blog.id ? `<a class="btn" href="${esc(s.blog.write_url)}" target="_blank" rel="noopener">${ic('ext')} 글쓰기 열기</a>` : ''}</div>
     <div class="notice warn"><span><b>게시 방식: 수동 보조.</b> 네이버가 블로그 글쓰기 API를 종료해, 로그인 정보를 받지 않고 완성된 기사·사진을 편집기에 옮기는 도우미를 제공합니다. 자동 발행은 네이버가 허용하는 공식 방법이 확인되기 전까지 켜지 않으며, 켜진 것처럼 표시하지도 않습니다.</span></div></div>`;
@@ -551,8 +556,25 @@ async function pSettings(el, q) {
   }
 }
 ACT.stTab = el => { ST.tab = el.dataset.t; route(); };
+const FOLDER_REGIONS = () => (typeof REGIONS_ORDER !== 'undefined' ? REGIONS_ORDER : []);
+function renderFolders(list) {
+  const el = $('#flist'); if (!el) return;
+  if (!list.length) { el.innerHTML = ''; return; }
+  const regs = FOLDER_REGIONS();
+  el.innerHTML = `<div class="tblwrap" style="max-height:340px;overflow:auto"><table class="t"><thead><tr><th style="width:56px">수집</th><th>메일함</th><th style="width:190px">지역(분류)</th></tr></thead><tbody>${list.map(f => `<tr data-fn="${esc(f.name)}"><td><input type="checkbox" class="fck" ${f.enabled ? 'checked' : ''}></td><td>${esc(f.name)}</td><td><select class="frg"><option value="">자동(본문으로 판단)</option>${regs.map(r => `<option ${f.region === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>
+  <div class="row"><button class="btn pri" data-act="fSave">메일함 설정 저장</button><span id="fsm" class="small muted"></span></div>`;
+}
+ACT.fLoad = async el => {
+  el.disabled = true; $('#fmsg').textContent = '불러오는 중…';
+  try { const r = await api('/api/mail/folders'); $('#fmsg').textContent = `${r.folders.length}개 메일함`; renderFolders(r.folders); } catch (er) { $('#fmsg').innerHTML = `<span style="color:var(--red)">${esc(er.message)}</span>`; } finally { el.disabled = false; }
+};
+ACT.fSave = async () => {
+  const folders = [...document.querySelectorAll('#flist tr[data-fn]')].map(tr => ({ name: tr.dataset.fn, enabled: tr.querySelector('.fck').checked, region: tr.querySelector('.frg').value }));
+  const r = await api('/api/settings/mail-folders', { method: 'POST', body: { folders } });
+  $('#fsm').textContent = `저장했습니다 — ${r.enabled}개 메일함을 수집합니다. 새로 고른 메일함은 '지금 메일 수집'을 누르면 가져옵니다.`;
+};
 ACT.mTest = async () => { const r = await api('/api/mail/test', { method: 'POST', body: { user: $('#mu').value, password: $('#mp').value } }); $('#mtr').innerHTML = r.ok ? `<span style="color:var(--green)">✔ 연결 성공 (받은편지함 ${r.total}통)</span>` : `<span style="color:var(--red)">${esc(r.error)}</span>`; };
-ACT.mSave = async () => { await api('/api/settings/mail', { method: 'POST', body: { user: $('#mu').value, password: $('#mp').value, minutes: +$('#mm').value, initial_days: +$('#mi').value, auto: $('#ma').checked } }); S.st = await api('/api/state'); toast('저장했습니다.', 'ok'); route(); };
+ACT.mSave = async () => { await api('/api/settings/mail', { method: 'POST', body: { user: $('#mu').value, password: $('#mp').value, minutes: +$('#mm').value, initial_days: +$('#mi').value, since: $('#msc').value, auto: $('#ma').checked } }); S.st = await api('/api/state'); toast('저장했습니다.', 'ok'); route(); };
 ACT.bSave = async () => { await api('/api/settings/blog', { method: 'POST', body: { url: $('#bu').value } }); S.st = await api('/api/state'); toast('저장했습니다.', 'ok'); route(); };
 ACT.aSave = async () => { await api('/api/settings/ai', { method: 'POST', body: { enabled: $('#ae').checked, key: $('#ak').value, model: $('#am').value } }); toast('저장했습니다.', 'ok'); route(); };
 ACT.aTest = async () => { $('#atr').textContent = '확인 중…'; const r = await api('/api/ai/test', { method: 'POST', body: {} }); $('#atr').innerHTML = r.ok ? '<span style="color:var(--green)">✔ 연결 성공</span>' : `<span style="color:var(--red)">${esc(r.error)}</span>`; };

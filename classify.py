@@ -17,6 +17,30 @@ ORG_WORDS = ["협회", "협의회", "연합회", "복지관", "재단", "공단"
 OUT_OF_GANGWON = ["경상남도", "경남", "경상북도", "경북", "충청", "전라", "경기", "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "제주"]
 
 
+CATEGORY_FOLDERS = ["청소년", "여성가족", "노인", "장애인"]  # 분야별 메일함 → 기본은 '유관기관·단체'(설정에서 바꿀 수 있음)
+
+
+def default_folder_region(name: str) -> str:
+    """메일함 이름으로 지역을 추정. 지역·기관 메일함이 아니면 ''."""
+    n = re.sub(r"\s+", "", name or "").split("/")[-1].split(".")[-1]
+    if n in ("강원도", "강원특별자치도", "강원특별자치도청", "도청"):
+        return PROVINCE
+    for r in CITIES + COUNTIES:
+        if n == r or n == r[:-1]:
+            return r
+    if n in CATEGORY_FOLDERS:
+        return OTHER
+    return ""
+
+
+def folder_region(name: str) -> str:
+    """저장된 메일함 설정(관리자가 고른 지역)을 우선하고, 없으면 이름으로 추정."""
+    for f in core.get("mail_folders") or []:
+        if f.get("name") == name:
+            return f.get("region") or ""
+    return default_folder_region(name)
+
+
 def _rules():
     return core.rows("SELECT kind, pattern, region FROM region_rules")
 

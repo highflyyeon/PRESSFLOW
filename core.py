@@ -17,7 +17,7 @@ from cryptography.fernet import Fernet, InvalidToken
 
 APP = "PRESSFLOW"
 APP_KO = "강원사회복지신문 통합 콘텐츠 자동화 플랫폼"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 HOME = Path(os.environ.get("PRESSFLOW_HOME") or (Path.home() / "PRESSFLOW")).expanduser()
 DATA = HOME / "data"
@@ -127,9 +127,15 @@ def db() -> sqlite3.Connection:
 def init_db() -> None:
     ensure_dirs()
     db().executescript(SCHEMA)
+    _add_column("mails", "folder", "TEXT")
     # 마이그레이션은 컬럼 추가만 허용 — 기존 데이터를 지우거나 초기화하지 않는다.
     if get("schema_version") is None:
         put("schema_version", 1)
+
+
+def _add_column(table: str, col: str, decl: str) -> None:
+    if col not in [r["name"] for r in db().execute(f"PRAGMA table_info({table})").fetchall()]:
+        db().execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
 
 def rows(sql: str, *a) -> list[sqlite3.Row]:

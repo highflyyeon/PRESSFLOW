@@ -63,7 +63,7 @@ def keep_resolved(old: list[dict], new: list[dict]) -> list[dict]:
 
 
 # ───────────── 메일 수집 → 저장 ─────────────
-def ingest_mail(raw: bytes, uidv: str, uid: int) -> int | None:
+def ingest_mail(raw: bytes, uidv: str, uid: int, folder: str = "INBOX") -> int | None:
     """원본 메일 저장 후 기사까지 처리. 이미 저장된 메일이면 None."""
     if core.row("SELECT id FROM mails WHERE uidv=? AND uid=?", uidv, uid):
         return None
@@ -89,8 +89,8 @@ def ingest_mail(raw: bytes, uidv: str, uid: int) -> int | None:
     body = proofread.normalize_ws(body or "")
 
     mail_id = core.run(
-        "INSERT INTO mails(uidv,uid,message_id,subject,sender_name,sender_email,received_at,body_text,status,created)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?)", uidv, uid, mid, subject, name, addr.lower(), recv, body, "saved", core.now_iso())
+        "INSERT INTO mails(uidv,uid,message_id,subject,sender_name,sender_email,received_at,body_text,status,created,folder)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?)", uidv, uid, mid, subject, name, addr.lower(), recv, body, "saved", core.now_iso(), folder)
     d = datetime.fromisoformat(recv)
     rp = P["mail_raw"] / f"{d:%Y}" / f"{d:%m}"
     rp.mkdir(parents=True, exist_ok=True)
@@ -282,6 +282,17 @@ def process_article(article_id: int, first_run: bool = False, unassigned: int = 
         # 분류
         if first_run or not a["region"]:
             c = classify.classify(m["sender_name"], m["sender_email"], m["subject"], text or m["body_text"])
+            fol = (m["folder"] or "") if "folder" in m.keys() else ""
+            fr = classify.folder_region(fol) if fol and fol != "INBOX" else ""
+            if fr:
+                tr = c["region"]
+                if fr == classify.OTHER:  # 분야별 메일함: 본문에서 더 구체적인 지역이 읽히면 그쪽을 쓴다
+                    if tr == classify.UNKNOWN:
+                        c = {"region": fr, "reason": f"메일함 '{fol}'", "sub_region": c.get("sub_region", "")}
+                else:  # 지역·도청 메일함: 사용자가 직접 분류해 둔 것이므로 메일함을 따른다
+                    if tr not in (fr, classify.UNKNOWN, classify.OTHER):
+                        add_flag(flags, "folder_mismatch", "warn", f"메일함은 '{fr}'인데 본문에서는 '{tr}'로 읽힙니다. 지역을 확인하세요.")
+                    c = {"region": fr, "reason": f"메일함 '{fol}'", "sub_region": c.get("sub_region", "")}
             core.run("UPDATE articles SET region=?, region_reason=?, sub_region=?, org=? WHERE id=?",
                      c["region"], c["reason"], c["sub_region"], m["sender_name"] or m["sender_email"], article_id)
             a = core.row("SELECT * FROM articles WHERE id=?", article_id)

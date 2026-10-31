@@ -228,7 +228,8 @@ def create_app() -> Flask:
         return jsonify(
             mail={"user": core.get("mail_user", ""), "has_password": core.has_secret("mail_password"),
                   "minutes": core.get("collect_minutes", 15), "initial_days": core.get("initial_days", 7),
-                  "auto": core.get("auto_collect", True)},
+                  "auto": core.get("auto_collect", True), "since": core.get("collect_since", ""),
+                  "folders": core.get("mail_folders") or []},
             blog={"url": core.get("blog_url", ""), "id": core.get("blog_id", ""), "write_url": blog.write_url(core.get("blog_id", "")),
                   "mode": "assist"},
             ai={"enabled": core.get("ai_enabled", False), "has_key": core.has_secret("anthropic_key"), "model": core.get("ai_model", "claude-sonnet-5-5")},
@@ -261,10 +262,67 @@ def create_app() -> Flask:
         core.put("collect_minutes", max(5, int(d.get("minutes") or 15)))
         core.put("initial_days", max(1, min(60, int(d.get("initial_days") or 7))))
         core.put("auto_collect", bool(d.get("auto", True)))
+        since = (d.get("since") or "").strip()
+        if since:
+            try:
+                datetime.strptime(since, "%Y-%m-%d")
+            except ValueError:
+                return jsonify(error="수집 시작일은 2026-10-26 같은 형식이어야 합니다."), 400
+        core.put("collect_since", since)
         if changed or not core.get("mail_state"):
             core.put("mail_state", {"connected_at": core.now_iso(), "first_done": False})
         core.audit(uname(), "메일 연결 설정 변경", user)
         return jsonify(ok=True)
+
+    @app.get("/api/mail/folders")
+    @auth("admin")
+    def mail_folders():
+        """네이버 메일함 목록 + 저장된 선택(없으면 지역·기관 이름의 메일함을 자동 추천)."""
+        try:
+            M = mailer.connect()
+            try:
+                found = mailer.list_folders(M)
+            finally:
+                try:
+                    M.logout()
+                except Exception:
+                    pass
+        except Exception as e:
+            return jsonify(error=str(e)[:300]), 400
+        saved = {f["name"]: f for f in (core.get("mail_folders") or [])}
+        out = []
+        for f in found:
+            n = f["name"]
+            if n in saved:
+                out.append({"name": n, "enabled": bool(saved[n].get("enabled")), "region": saved[n].get("region", ""), "known": True})
+                continue
+            if n != "INBOX" and any(s in n for s in mailer.SKIP_FOLDERS):
+                continue
+            dr = classify.default_folder_region(n)
+            out.append({"name": n, "enabled": bool(dr) or n == "INBOX", "region": dr if dr != classify.OTHER or n in classify.CATEGORY_FOLDERS else "", "known": False})
+        if not saved and any(x["enabled"] and x["name"] != "INBOX" for x in out):
+            for x in out:  # 지역 메일함이 따로 있으면 받은메일함(광고·인증 메일 등)은 기본으로 수집하지 않는다
+                if x["name"] == "INBOX":
+                    x["enabled"] = False
+        out.sort(key=lambda x: (not x["enabled"], x["name"] != "INBOX", x["name"]))
+        return jsonify(folders=out)
+
+    @app.post("/api/settings/mail-folders")
+    @auth("admin")
+    def set_mail_folders():
+        d = J()
+        items = []
+        for f in d.get("folders") or []:
+            n = str(f.get("name") or "").strip()
+            if not n:
+                continue
+            reg = str(f.get("region") or "")
+            if reg and reg not in classify.REGIONS:
+                reg = ""
+            items.append({"name": n, "enabled": bool(f.get("enabled")), "region": reg})
+        core.put("mail_folders", items)
+        core.audit(uname(), "수집 메일함 변경", ", ".join(i["name"] for i in items if i["enabled"])[:300])
+        return jsonify(ok=True, enabled=sum(1 for i in items if i["enabled"]))
 
     @app.post("/api/settings/blog")
     @auth("admin")
