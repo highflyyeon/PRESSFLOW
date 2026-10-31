@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 KEYFILE = ROOT / "release_private.key"
 CHANNEL = ROOT / "update_channel.json"
-EXCLUDE_TOP = {"dist-installer", "_smoke", "installer", ".github", "build", "PRESSFLOW.spec", "venv", ".update", "dist", "release_private.key", "update_channel.json", ".git", "__pycache__", "make_release.py"}
+EXCLUDE_TOP = {"dist-installer", "_smoke", "installer", ".github", "build", "PRESSFLOW.spec", "venv", ".update", "dist", "release_private.key", ".git", "__pycache__", "make_release.py"}
 
 
 def keygen():

@@ -40,11 +40,17 @@ def vtuple(v: str) -> tuple:
     return tuple(int(x) for x in re.findall(r"\d+", v or "0")[:4]) or (0,)
 
 
+# 설정 파일이 없어도 이 주소·공개키로 동작한다(공개키는 비밀이 아님). 파일의 값이 있으면 그것이 우선.
+DEFAULT_CHANNEL = {"manifest_url": "https://github.com/highflyyeon/PRESSFLOW/releases/latest/download/latest.json",
+                   "public_key": "VVtLYZFrpPc1N+S3QLqUEb7/cqmSZRazPejG9DnbXrw="}
+
+
 def channel() -> dict:
     try:
-        return json.loads(CHANNEL.read_text(encoding="utf-8"))
+        f = json.loads(CHANNEL.read_text(encoding="utf-8"))
     except Exception:
-        return {}
+        f = {}
+    return {**DEFAULT_CHANNEL, **{k: v for k, v in f.items() if v}}
 
 
 def current_version() -> str:
